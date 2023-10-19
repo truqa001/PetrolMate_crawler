@@ -1,8 +1,10 @@
 import puppeteer from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import AdblockerPlugin from 'puppeteer-extra-plugin-adblocker';
-import { CITIES } from './city-latitudes.mjs';
+import { CITY_LATITUDES } from './city-latitudes.mjs';
 import { FUEL_TYPES } from './fuel-types.mjs';
+import { FirebaseDB } from './firebase-config.mjs';
+import _ from 'lodash';
 
 puppeteer.use(StealthPlugin());
 puppeteer.use(AdblockerPlugin({ blockTrackers: true }));
@@ -26,36 +28,33 @@ const args = [
     const page = await browser.newPage();
     page.setViewport({ width: 1280, height: 720 });
 
-    const data = await appendFuelStationsGroupedByCity(page);
-
+    await saveFuelStationsData(browser, page);
     await browser.close();
+
 })();
 
-async function appendFuelStationsGroupedByCity(page) {
-    let result = {}
-    let fuelTypeData = {};
-    for (const cityKey of Object.keys(CITIES)) {
+async function saveFuelStationsData(browser, page) {
+    for (const cityKey of Object.keys(CITY_LATITUDES)) {
         for (const fuelTypeKey of Object.keys(FUEL_TYPES)) {
-            const stationData = await getFuelStationsData(page, CITIES[cityKey], FUEL_TYPES[fuelTypeKey])
-            fuelTypeData = {
-                ...fuelTypeData,
-                [FUEL_TYPES[fuelTypeKey]]: [...stationData]
+            const stationData = await getFuelStationsData(page, CITY_LATITUDES[cityKey], FUEL_TYPES[fuelTypeKey])
+
+            const root = '/City';
+            const ref = FirebaseDB.ref(`${root}/${cityKey}/${FUEL_TYPES[fuelTypeKey]}`);
+
+            try {
+                await ref.set(stationData);
+                console.log('Data saved successfully');
+            } catch (error) {
+                console.error('Error: ' + error);
             }
         }
 
-        result = {
-            ...result,
-            [cityKey]: {
-                ...fuelTypeData
-            }
-        }
     }
-    return result
 }
 
 
 async function getFuelStationsData(page, city, fuelType) {
-    const stationData = [];
+    const stationsData = [];
 
     await page.goto(`https://petrolspy.com.au/map/latlng/${city}`, {
         waitUntil: 'networkidle2',
@@ -81,17 +80,28 @@ async function getFuelStationsData(page, city, fuelType) {
 
     for (const stationItemElement of stationItemElements) {
         const stationDetails = await getStationDetails(stationItemElement)
-        stationData.push(stationDetails)
+
+        if (stationDetails) {
+            stationsData.push(stationDetails)
+        }
     }
 
-    return stationData;
+    const minPrice = _.min(stationsData.map(station => station.price));
+    const maxPrice = _.max(stationsData.map(station => station.price));
+
+    return {
+        stations: [...stationsData],
+        minPrice,
+        maxPrice
+    };
 }
 
 async function getStationDetails(stationItemElement) {
-    const priceElement = await stationItemElement.$('.stations-item-column-first b');
+    const firstColumnHTML = await stationItemElement.$eval('.stations-item-column-first', el => el.textContent);
+    const priceMatch = firstColumnHTML.match(/(\d+\.\d+)/); // Match the price (assuming it's a decimal number)
+    const price = priceMatch ? priceMatch[0] : null;
 
-    if (priceElement) {
-        const price = await stationItemElement.$eval('.stations-item-column-first b', b => b.textContent)
+    if (price) {
         const stationItemMidColText = await stationItemElement.$eval('.stations-item-column-middle', el => el.textContent);
         const trimmedStationItemMidColTextArray = stationItemMidColText.split('\n')
             .map(line => line.trim())
