@@ -1,4 +1,4 @@
-export const CITY_LATITUDES = {
+export const CITY_COORDINATES = {
     Adelaide: "-34.9328294/138.6038129",
     Brisbane: "-27.4660994/153.023588",
     Canberra: "-35.282/149.128684",
