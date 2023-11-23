@@ -10,7 +10,9 @@
   },
   "author": "Anthony Truong",
   "license": "ISC",
-  "devDependencies": {},
+  "devDependencies": {
+    "moment": "^2.29.4"
+  },
   "dependencies": {
     "axios": "^1.6.0",
     "dotenv": "^16.3.1",

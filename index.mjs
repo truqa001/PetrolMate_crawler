@@ -6,6 +6,7 @@ import { FUEL_TYPES } from './fuel-types.mjs';
 import { FirebaseDB } from './firebase-config.mjs';
 import _ from 'lodash';
 import axios from 'axios';
+import moment from 'moment';
 
 puppeteer.use(StealthPlugin());
 puppeteer.use(AdblockerPlugin({ blockTrackers: true }));
@@ -28,7 +29,24 @@ const args = [
   const page = await browser.newPage();
   page.setViewport({ width: 1280, height: 720 });
 
+  const startTime = moment();
   await saveFuelStationsData(page);
+  const endTime = moment();
+
+  const duration = moment.duration(endTime.diff(startTime));
+
+  const ref = FirebaseDB.ref();
+  await saveDataToFirebase(
+    ref,
+    {
+      Updated: {
+        at: moment().format('DD-MM-YYYY HH:mm:ss').toString(),
+        duration: `${duration.hours()} hours and ${duration.minutes()} minutes`,
+      },
+    },
+    'Timestamp is updated successfully',
+  );
+
   await browser.close();
 })();
 
@@ -41,20 +59,20 @@ async function saveFuelStationsData(page) {
         FUEL_TYPES[fuelTypeKey],
       );
 
-      const root = '/City';
-      const ref = FirebaseDB.ref(
-        `${root}/${cityKey}/${FUEL_TYPES[fuelTypeKey]}`,
-      );
-
+      const ref = FirebaseDB.ref();
       saveDataToFirebase(
         ref,
-        stationData,
+        {
+          City: {
+            [cityKey]: {
+              [FUEL_TYPES[fuelTypeKey]]: { ...stationData },
+            },
+          },
+        },
         `Data saved successfully for City:${cityKey}, Fuel type: ${fuelTypeKey}`,
       );
     }
   }
-
-  saveUpdatedAt();
 }
 
 async function getFuelStationsData(page, cityCoors, fuelType) {
@@ -69,9 +87,9 @@ async function getFuelStationsData(page, cityCoors, fuelType) {
   await page.waitForSelector('.dropDownOptionsDiv');
   await page.click(`#option_${fuelType}`);
 
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 4; i++) {
     await page.click('.maplibregl-ctrl-zoom-out');
-    if (i < 2) {
+    if (i < 3) {
       await page.waitForTimeout(1000);
     }
   }
@@ -128,12 +146,6 @@ async function getStationDetails(page, stationItemElement) {
         .trim(),
     );
 
-    const cnrTextIndex = streetAddress.indexOf('Cnr');
-    const addressWithoutCnrText =
-      cnrTextIndex != -0 && cnrTextIndex != -1
-        ? fullAddress.substring(0, cnrTextIndex)
-        : fullAddress;
-
     const imageSrc = await stationItemElement.$eval(
       '.stations-item-column-first img',
       (el) => el.getAttribute('src'),
@@ -143,18 +155,21 @@ async function getStationDetails(page, stationItemElement) {
 
     await axios
       .get(
-        `https://nominatim.openstreetmap.org/search?q=${addressWithoutCnrText}&format=json&countrycodes=AU`,
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
+          fullAddress,
+        )}&format=json&countrycodes=AU`,
       )
       .then((res) => {
-        const longitude = res.data[0]?.lon;
         const latitude = res.data[0]?.lat;
-        coordinates = longitude && latitude ? { longitude, latitude } : {};
+        const longitude = res.data[0]?.lon;
+
+        coordinates = latitude && longitude ? { latitude, longitude } : {};
       })
       .catch((e) => console.log('e', e));
 
     return {
       stationName,
-      address: addressWithoutCnrText,
+      address: fullAddress,
       coordinates,
       price,
       logo: imageSrc,
@@ -164,22 +179,9 @@ async function getStationDetails(page, stationItemElement) {
 
 async function saveDataToFirebase(ref, data, successMsg) {
   try {
-    await ref.set(data);
+    await ref.update(data);
     console.log(successMsg);
   } catch (error) {
     console.error('Error: ' + error);
   }
-}
-
-async function saveUpdatedAt() {
-  const now = new Date();
-  const options = { timeZone: 'Australia/Adelaide' };
-  const currentTimestamp = now.toLocaleString('en-US', options);
-
-  const ref = FirebaseDB.ref('/');
-  saveDataToFirebase(
-    ref,
-    { updatedAt: currentTimestamp },
-    'Saved successfully',
-  );
 }
