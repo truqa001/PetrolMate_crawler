@@ -21,7 +21,12 @@ const args = [
   '--user-agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/65.0.3312.0 Safari/537.36"',
 ];
 
-(async () => {
+main().catch((e) => {
+  console.error('Error:', e.message);
+  process.exit(1);
+});
+
+async function main() {
   const browser = await puppeteer.launch({
     headless: false,
     ...args,
@@ -48,7 +53,8 @@ const args = [
   );
 
   await browser.close();
-})();
+  process.exit(0);
+}
 
 async function saveFuelStationsData(page) {
   for (const cityKey of Object.keys(CITY_COORDINATES)) {
@@ -59,16 +65,12 @@ async function saveFuelStationsData(page) {
         FUEL_TYPES[fuelTypeKey],
       );
 
-      const ref = FirebaseDB.ref();
+      const ref = FirebaseDB.ref(
+        `/City/${cityKey}/${[FUEL_TYPES[fuelTypeKey]]}`,
+      );
       saveDataToFirebase(
         ref,
-        {
-          City: {
-            [cityKey]: {
-              [FUEL_TYPES[fuelTypeKey]]: { ...stationData },
-            },
-          },
-        },
+        stationData,
         `Data saved successfully for City:${cityKey}, Fuel type: ${fuelTypeKey}`,
       );
     }
