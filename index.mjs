@@ -89,9 +89,9 @@ async function getFuelStationsData(page, cityCoors, fuelType) {
   await page.waitForSelector('.dropDownOptionsDiv');
   await page.click(`#option_${fuelType}`);
 
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 5; i++) {
     await page.click('.maplibregl-ctrl-zoom-out');
-    if (i < 3) {
+    if (i < 4) {
       await page.waitForTimeout(1000);
     }
   }
@@ -134,19 +134,27 @@ async function getStationDetails(page, stationItemElement) {
       '.stations-item-column-middle',
       (el) => el.textContent,
     );
+
     const trimmedStationItemMidColTextArray = stationItemMidColText
       .split('\n')
       .map((line) => line.trim())
       .filter((line) => line !== '');
-    const stationName = trimmedStationItemMidColTextArray[0];
 
+    const stationName = trimmedStationItemMidColTextArray[0];
     const streetAddress = trimmedStationItemMidColTextArray[1];
-    const surburbAndPostcode = trimmedStationItemMidColTextArray[2];
-    const fullAddress = _.startCase(
-      (streetAddress + ', ' + surburbAndPostcode)
-        .replace(/\([^)]*\)/g, '')
-        .trim(),
+
+    const suburb = await stationItemElement.$eval(
+      '.stations-item-column-middle b:nth-of-type(2)',
+      (el) => el.textContent,
     );
+
+    const postcode = trimmedStationItemMidColTextArray
+      .at(-1)
+      .split(suburb)
+      .at(-1)
+      .trim();
+
+    const fullAddress = `${streetAddress}, ${suburb}, ${postcode}`;
 
     const imageSrc = await stationItemElement.$eval(
       '.stations-item-column-first img',
@@ -167,11 +175,16 @@ async function getStationDetails(page, stationItemElement) {
 
         coordinates = latitude && longitude ? { latitude, longitude } : {};
       })
-      .catch((e) => console.log('e', e));
+      .catch((e) => console.error('e', e));
 
     return {
       stationName,
-      address: fullAddress,
+      address: {
+        streetAddress,
+        suburb,
+        postcode,
+        fullAddress,
+      },
       coordinates,
       price,
       logo: imageSrc,
